@@ -204,4 +204,3 @@ plugins/*/*.3
 /valgrind/suppressions
 tags
 Session.vim
-
