@@ -11,12 +11,12 @@ nbdkit_build_dir=$root_dir/nbdkit_build
 # libnbd failed to `make` if `./congigure`-d in another dir
 libnbd_build_dir=$root_dir/libnbd
 
-cd $nbdkit_build_dir/filters/unzstd
-make -q || { CFLAGS="-Werror -Wfatal-errors" make -e && sudo make install && printf "\n"; }
-[ $? != 0 ] && exit 1
-
 cd $libnbd_build_dir/copy
 make -q || { make && sudo make install && printf "\n"; }
+[ $? != 0 ] && exit 1
+
+cd $nbdkit_build_dir/filters/unzstd
+make -q || { CFLAGS="-Werror -Wfatal-errors" make -e && sudo make install && printf "\n"; }
 [ $? != 0 ] && exit 1
 
 cd $root_dir
