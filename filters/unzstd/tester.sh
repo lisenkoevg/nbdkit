@@ -12,31 +12,83 @@ nbdkit_build_dir=$root_dir/nbdkit_build
 libnbd_build_dir=$root_dir/libnbd
 ZSTD=$root_dir/nbd/experiments/myzstd
 
-cd $libnbd_build_dir/copy
-make -q || { make && sudo make install && printf "\n"; }
-[ $? != 0 ] && exit 1
+function main() {
+  cd $(dirname $ZSTD)
+  make myzstd -q || make myzstd
+  [ $? != 0 ] && exit 1
 
-cd $nbdkit_build_dir/filters/unzstd
-make -q || { CFLAGS="-Wno-unused-variable -Wno-unused-function -Wall -Werror -Wfatal-errors" make -e && sudo make install && printf "\n"; }
-[ $? != 0 ] && exit 1
+  cd $libnbd_build_dir/copy
+  make -q || { make && sudo make install && printf "\n"; }
+  [ $? != 0 ] && exit 1
 
-cd $root_dir
+  cd $nbdkit_build_dir/filters/unzstd
+  CFLAGS="-Wno-unused-variable -Wno-unused-function -Wall -Werror -Wfatal-errors"
+  make -q || { CFLAGS="$CFLAGS" make -e && sudo make install && printf "\n"; }
+  [ $? != 0 ] && exit 1
 
-sample_size=${1:-1}
-koef=${2:-14}
-echo -en $(yes '\x1' | head -n $sample_size) | sed -E 's/\s+//g' > sample
-# dd if=/dev/random of=sample bs=1 count=$sample_size status=none
-file_size=$((sample_size * koef + 2 + 16))
-# file_size=$((sample_size))
+  cd $root_dir
 
-t1=$(date +%s%3N)
+  data=1
 
-$ZSTD < sample > sample.zt \
-  && dd if=/dev/zero of=file.img bs=1 count=$file_size status=none \
-  && nbdkit $V2 -P nbdkit.pid --filter=log -D unzstd.flag=1 --filter=unzstd file file.img logfile=nbdkit.log \
-  && cat sample | nbdcopy $V1 - nbd://localhost \
-  && { diff -qs <(head -c $sample_size file.img) sample > /dev/null && echo Test passed || echo Test FAILED; } \
-  ; kill $(cat nbdkit.pid) > /dev/null 2>&1 ; rm -rf nbdkit.pid
+  if [ -z "$1" ]; then
+    usage
+  fi
 
-t2=$(date +%s%3N)
-echo "elapsed $((t2 - t1))ms"
+  while getopts ":d:rp" opt; do
+    case $opt in
+      r ) random=1 ;;
+      p ) pipe=1 ;;
+      d ) data=$OPTARG ;;
+      \? | h) usage ;;
+    esac
+  done
+  shift $((OPTIND - 1))
+
+  sample_size=${1:-1}
+
+  if [ -n "$random" ]; then
+    echo Using random data \(length: $sample_size\)
+    dd if=/dev/random of=sample bs=1 count=$sample_size status=none
+  else
+    echo 'Using \x'"$data" data \(length: $sample_size\)
+    echo -en $(yes "\x$data" | head -n $sample_size) | sed -E 's/\s+//g' > sample
+  fi
+
+  if [ -z "$pipe" ]; then
+    cmd_nbdcopy='nbdcopy $V1 sample nbd://localhost'
+  else
+    cmd_nbdcopy='cat sample | nbdcopy $V1 - nbd://localhost'
+  fi
+
+  file_size=$((sample_size))
+
+
+  t1=$(date +%s%3N)
+
+  $ZSTD < sample > sample.zt \
+    && dd if=/dev/zero of=file.img bs=1 count=$file_size status=none \
+    && nbdkit $V2 -P nbdkit.pid --filter=log -D unzstd.flag=1 --filter=unzstd file file.img logfile=nbdkit.log \
+    && eval $cmd_nbdcopy \
+    && { diff -qs <(head -c $sample_size file.img) sample > /dev/null && echo Test passed || echo Test FAILED; } \
+    ; kill $(cat nbdkit.pid) > /dev/null 2>&1 ; rm -rf nbdkit.pid
+
+  t2=$(date +%s%3N)
+  echo "elapsed $((t2 - t1))ms"
+}
+
+function usage() {
+  msg=$(cat <<-END
+
+	./tester.sh [-r] [-p] -d {0|1|...} [sample_data_size=1]
+	  -d {0,1,...} - use specified value (0x00, 0x01, ...) for input data
+	  -r - use random data
+	  -p - use pipe
+	  use V1 and V2 env variable to pass cmd params to nbdcopy and nbdkit respectively
+	  for example, V1="--zstd --no-extents -v" V2="-v" ./tester.sh ...
+END
+  )
+  echo -e "$msg\n"
+  exit
+}
+
+main $*

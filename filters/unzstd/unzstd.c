@@ -61,9 +61,6 @@ static void unzstd_close(void *handle) {
 }
 
 static int unzstd_prepare(nbdkit_next *next, void *handle, int readonly) {
-  struct handle *h = handle;
-  h->offset = 0;
-  h->size = 0;
   return 0;
 }
 
@@ -76,17 +73,18 @@ static int64_t unzstd_get_size(nbdkit_next *next, void *handle) {
    * result, because it caches the plugin size in server/backend.c.
    */
   size = next->get_size(next);
-//   if (unzstd_debug_flag)
-//     nbdkit_debug("get_size size=%lu h->size=%lu", size, h->size);
 
   if (size == -1)
     return -1;
 
-  //   return h->size;
-  return size;
+  // while testing file-plugin file size is set to size of nbdcopy input data
+  // so ZSTD_compressBound() used for handle error:
+  // nbd_pwrite: request out of bounds: No space left on device
+  // as compressed-random data (or several-bytes data) is bigger than not compressed
+  return ZSTD_compressBound(size);
+//   return size;
 }
 
-/* Write data to the file. */
 static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
                       uint32_t count, uint64_t offs, uint32_t flags, int *err) {
   struct {
@@ -94,7 +92,13 @@ static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
     uint64_t offset;
   } orig;
 
+#if 0
+  char *s = buffer_to_str_wrap(buf, count, 0);
+  nbdkit_debug("%s", s);
+#endif
+
   memcpy(&orig, buf, sizeof orig);
+  nbdkit_debug("pwrite orig.size=%lu orig.offset=%lu", orig.size, orig.offset);
 
   void *bufOut = malloc(orig.size);
   if (bufOut == NULL) {
@@ -104,19 +108,14 @@ static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
 
   size_t const ret = ZSTD_decompress(bufOut, orig.size, buf + sizeof orig, count - sizeof orig);
   if (ZSTD_isError(ret)) {
-    fprintf(stderr, "ZSTD_decompress() error: %s\n, count=%u\n", ZSTD_getErrorName(ret), count);
+    fprintf(stderr, "ZSTD_decompress() error: %s\n", ZSTD_getErrorName(ret));
     nbdkit_error("%s", ZSTD_getErrorName(ret));
     return -1;
   }
-#if 0
-  char *s = buffer_to_str_wrap(buf, count, 0);
-  nbdkit_debug("%s", s);
-#endif
+
+  // TODO fix error: free(): double free detected in tcache 2
   free((void *)buf);
 
-  if (unzstd_debug_flag)
-    nbdkit_debug("decompress, ret=%lu, compressed size: %u, orig size/offset:%lu/%lu",
-        ret, count, orig.size, orig.offset);
   return next->pwrite(next, bufOut, orig.size, orig.offset, flags, err);
 //   return next->pwrite(next, buf, count, offs, flags, err);
 }
