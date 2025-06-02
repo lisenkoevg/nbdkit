@@ -2,3 +2,10 @@
 
 nbdkit-unzstd-filter - uncompress zstd data
 
+=head1 DESCRIPTION
+
+=head1 SEE ALSO
+
+=head1 AUTHORS
+
+=head1 COPYRIGHT
