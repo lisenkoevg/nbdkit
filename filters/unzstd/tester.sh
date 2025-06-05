@@ -51,12 +51,12 @@ function main() {
     dd if=/dev/random of=sample bs=1 count=$sample_size status=none
   else
     if [ -n "$zero" ]; then
-      echo -en $(yes "\x0" | head -n $((sample_size / 2)) ) | sed -E 's/\s+//g' > sample
+      rm -f sample
+      fallocate -l $((sample_size / 2)) sample
       echo -en $(yes "\x$data" | head -n $((sample_size - sample_size / 2)) ) | sed -E 's/\s+//g' >> sample
     else
       echo -en $(yes "\x$data" | head -n $((sample_size)) ) | sed -E 's/\s+//g' > sample
     fi
-    fallocate -d sample
   fi
 
   if [ -z "$pipe" ]; then
@@ -67,17 +67,16 @@ function main() {
 
   file_size=$((sample_size))
 
-
-  t1=$(date +%s%3N)
-
+  rm -f file.img
   $ZSTD < sample > sample.zt \
-    && dd if=/dev/zero of=file.img bs=1 count=$file_size status=none \
+    && fallocate -l $file_size file.img \
+    && t1=$(date +%s%3N) \
     && nbdkit $V2 -P nbdkit.pid --filter=log -D unzstd.flag=1 --filter=unzstd file file.img logfile=nbdkit.log \
     && eval $cmd_nbdcopy \
+    && t2=$(date +%s%3N) \
     && { diff -qs <(head -c $sample_size file.img) sample > /dev/null && echo Test passed || echo Test FAILED; } \
     ; kill $(cat nbdkit.pid) > /dev/null 2>&1 ; rm -rf nbdkit.pid
 
-  t2=$(date +%s%3N)
   echo "elapsed $((t2 - t1))ms"
 }
 
