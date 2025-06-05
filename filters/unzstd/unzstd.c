@@ -26,6 +26,7 @@
 #endif
 
 int unzstd_debug_flag;
+void *bufOut;
 
 static int unzstd_config(nbdkit_next_config *next, nbdkit_backend *nxdata,
                       const char *key, const char *value) {
@@ -102,11 +103,12 @@ static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
   memcpy(&orig, buf, sizeof orig);
   nbdkit_debug("pwrite orig.size=%lu orig.offset=%lu", orig.size, orig.offset);
 
-  void *bufOut = malloc(orig.size);
-  if (bufOut == NULL) {
-    nbdkit_error("unzstd malloc");
+  void *ptr = realloc(bufOut, orig.size);
+  if (ptr == NULL) {
+    nbdkit_error("unzstd realloc");
     return -1;
   }
+  bufOut = ptr;
 
   size_t const ret = ZSTD_decompress(bufOut, orig.size, buf + sizeof orig, count - sizeof orig);
   if (ZSTD_isError(ret)) {
@@ -115,11 +117,7 @@ static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
     return -1;
   }
 
-  // TODO fix error: free(): double free detected in tcache 2
-  free((void *)buf);
-
   return next->pwrite(next, bufOut, orig.size, orig.offset, flags, err);
-//   return next->pwrite(next, buf, count, offs, flags, err);
 }
 
 static struct nbdkit_filter filter = {

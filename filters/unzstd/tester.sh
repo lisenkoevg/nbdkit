@@ -34,11 +34,12 @@ function main() {
     usage
   fi
 
-  while getopts ":d:rp" opt; do
+  while getopts ":d:rpz" opt; do
     case $opt in
       r ) random=1 ;;
       p ) pipe=1 ;;
       d ) data=$OPTARG ;;
+      z ) zero=1 ;;
       \? | h) usage ;;
     esac
   done
@@ -47,11 +48,15 @@ function main() {
   sample_size=${1:-1}
 
   if [ -n "$random" ]; then
-    echo Using random data \(length: $sample_size\)
     dd if=/dev/random of=sample bs=1 count=$sample_size status=none
   else
-    echo 'Using \x'"$data" data \(length: $sample_size\)
-    echo -en $(yes "\x$data" | head -n $sample_size) | sed -E 's/\s+//g' > sample
+    if [ -n "$zero" ]; then
+      echo -en $(yes "\x0" | head -n $((sample_size / 2)) ) | sed -E 's/\s+//g' > sample
+      echo -en $(yes "\x$data" | head -n $((sample_size - sample_size / 2)) ) | sed -E 's/\s+//g' >> sample
+    else
+      echo -en $(yes "\x$data" | head -n $((sample_size)) ) | sed -E 's/\s+//g' > sample
+    fi
+    fallocate -d sample
   fi
 
   if [ -z "$pipe" ]; then
@@ -83,6 +88,7 @@ function usage() {
 	  -d {0,1,...} - use specified value (0x00, 0x01, ...) for input data
 	  -r - use random data
 	  -p - use pipe
+      -z - add zeros in beginning (half of sample_data_size)
 	  use V1 and V2 env variable to pass cmd params to nbdcopy and nbdkit respectively
 	  for example, V1="--zstd --no-extents -v" V2="-v" ./tester.sh ...
 END
