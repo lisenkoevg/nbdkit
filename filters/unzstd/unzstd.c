@@ -21,9 +21,7 @@
 #include "minmax.h"
 #include "utils.h"
 
-#if 0
-#include "../../../nbd/experiments/dump_buffer.c"
-#endif
+#include "../../libnbd/copy/unzstd.h"
 
 int unzstd_debug_flag;
 void *bufOut;
@@ -90,34 +88,32 @@ static int64_t unzstd_get_size(nbdkit_next *next, void *handle) {
 
 static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
                       uint32_t count, uint64_t offs, uint32_t flags, int *err) {
-  struct {
-    size_t size;
-    uint64_t offset;
-  } orig;
+
+  struct zstd_params zstd_params;
 
 #if 0
   char *s = buffer_to_str_wrap(buf, count, 0);
   nbdkit_debug("%s", s);
 #endif
 
-  memcpy(&orig, buf, sizeof orig);
-  nbdkit_debug("pwrite orig.size=%lu orig.offset=%lu", orig.size, orig.offset);
+  memcpy(&zstd_params, buf, sizeof zstd_params);
+  nbdkit_debug("pwrite zstd_params.original_size=%lu zstd_params.original_offset=%lu", zstd_params.original_size, zstd_params.original_offset);
 
-  void *ptr = realloc(bufOut, orig.size);
+  void *ptr = realloc(bufOut, zstd_params.original_size);
   if (ptr == NULL) {
     nbdkit_error("unzstd realloc");
     return -1;
   }
   bufOut = ptr;
 
-  size_t const ret = ZSTD_decompress(bufOut, orig.size, buf + sizeof orig, count - sizeof orig);
+  size_t const ret = ZSTD_decompress(bufOut, zstd_params.original_size, buf + sizeof zstd_params, count - sizeof zstd_params);
   if (ZSTD_isError(ret)) {
     fprintf(stderr, "ZSTD_decompress() error: %s\n", ZSTD_getErrorName(ret));
     nbdkit_error("%s", ZSTD_getErrorName(ret));
     return -1;
   }
 
-  return next->pwrite(next, bufOut, orig.size, orig.offset, flags, err);
+  return next->pwrite(next, bufOut, zstd_params.original_size, zstd_params.original_offset, flags, err);
 }
 
 static struct nbdkit_filter filter = {
