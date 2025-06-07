@@ -47,8 +47,11 @@ function main() {
 
   sample_size=${1:-1}
 
+  t1=$(date +%s%3N)
   if [ -n "$random" ]; then
-    dd if=/dev/random of=sample bs=1 count=$sample_size status=none
+    bs=1024
+    dd if=/dev/random of=sample bs=$bs count=$((sample_size / bs)) status=none
+    dd if=/dev/random of=sample oflag=append conv=notrunc bs=1 count=$((sample_size % bs)) status=none
   else
     if [ -n "$zero" ]; then
       rm -f sample
@@ -58,6 +61,8 @@ function main() {
       echo -en $(yes "\x$data" | head -n $((sample_size)) ) | sed -E 's/\s+//g' > sample
     fi
   fi
+  t2=$(date +%s%3N)
+  echo "Sample data ($sample_size) written in $((t2 - t1))ms"
 
   if [ -z "$pipe" ]; then
     cmd_nbdcopy='nbdcopy $V1 sample nbd://localhost'
