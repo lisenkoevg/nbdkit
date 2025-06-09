@@ -95,13 +95,21 @@ function main() {
 function usage() {
   msg=$(cat <<-END
 
-	./tester.sh [-r] [-p] -d {0|1|...} [sample_data_size=1]
+	./tester.sh [-r] [-p] [-d {0|1|...}] -z sample_data_size
+
 	  -d {0,1,...} - use specified value (0x00, 0x01, ...) for input data
 	  -r - use random data
 	  -p - use pipe
-      -z - add zeros in beginning (half of sample_data_size)
-	  use V1 and V2 env variable to pass cmd params to nbdcopy and nbdkit respectively
-	  for example, V1="--zstd --no-extents -v" V2="-v" ./tester.sh ...
+	  -z - add zeros in beginning (half of sample_data_size)
+
+	use V1 and V2 env variable to pass cmd params to nbdcopy and nbdkit respectively
+	for example, V1="--zstd --no-extents -v" V2="-v" ./tester.sh ...
+	use VALGRIND1 and VALGRIND2 env variables to prepend invocation of nbdcopy and nbdkit respectively
+	with their values
+	suggested usage:
+	VALGRIND1="valgrind" V1="..." ./tester.sh 1
+	VALGRIND2="valgrind" V1="..." ./tester.sh 1
+
 END
   )
   echo -e "$msg\n"
