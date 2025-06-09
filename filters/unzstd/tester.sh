@@ -28,7 +28,7 @@ function main() {
 
   cd $root_dir
 
-  data=1
+  data=
 
   if [ -z "$1" ]; then
     usage
@@ -55,32 +55,39 @@ function main() {
   else
     if [ -n "$zero" ]; then
       rm -f sample
-      fallocate -l $((sample_size / 2)) sample
-      echo -en $(yes "\x$data" | head -n $((sample_size - sample_size / 2)) ) | sed -E 's/\s+//g' >> sample
+      if [ -n "$data" ]; then
+        fallocate -l $((sample_size / 2)) sample
+        echo -en $(yes "\x$data" | head -n $((sample_size - sample_size / 2)) ) | sed -E 's/\s+//g' >> sample
+      else
+        fallocate -l $((sample_size)) sample
+      fi
     else
-      echo -en $(yes "\x$data" | head -n $((sample_size)) ) | sed -E 's/\s+//g' > sample
+      echo -en $(yes "\x$data" | head -n $sample_size ) | sed -E 's/\s+//g' >> sample
     fi
+    fallocate -d sample
   fi
   t2=$(date +%s%3N)
   echo "Sample data ($sample_size) written in $((t2 - t1))ms"
 
   if [ -z "$pipe" ]; then
-    cmd_nbdcopy='nbdcopy $V1 sample nbd://localhost'
+    cmd_nbdcopy='$VALGRIND1 nbdcopy $V1 sample nbd://localhost'
   else
-    cmd_nbdcopy='cat sample | nbdcopy $V1 - nbd://localhost'
+    cmd_nbdcopy='cat sample | $VALGRIND1 nbdcopy $V1 - nbd://localhost'
   fi
 
   file_size=$((sample_size))
 
   rm -f file.img
-  $ZSTD < sample > sample.zt \
-    && fallocate -l $file_size file.img \
-    && t1=$(date +%s%3N) \
-    && nbdkit $V2 -P nbdkit.pid --filter=log -D unzstd.flag=1 --filter=unzstd file file.img logfile=nbdkit.log \
-    && eval $cmd_nbdcopy \
-    && t2=$(date +%s%3N) \
-    && { diff -qs <(head -c $sample_size file.img) sample > /dev/null && echo Test passed || echo Test FAILED; } \
-    ; kill $(cat nbdkit.pid) > /dev/null 2>&1 ; rm -rf nbdkit.pid
+  $ZSTD < sample > sample.zt
+  fallocate -l $file_size file.img
+  t1=$(date +%s%3N)
+  $VALGRIND2 nbdkit $V2 -P nbdkit.pid -D unzstd.flag=1 --filter=unzstd file file.img \
+    && eval $cmd_nbdcopy
+  t2=$(date +%s%3N)
+  sleep 1
+  { diff -qs <(head -c $sample_size file.img) sample > /dev/null && echo Test passed || echo Test FAILED; }
+  kill $(cat nbdkit.pid) > /dev/null 2>&1
+  rm -rf nbdkit.pid
 
   echo "elapsed $((t2 - t1))ms"
 }

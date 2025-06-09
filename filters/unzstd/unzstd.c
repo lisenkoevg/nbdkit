@@ -21,10 +21,30 @@
 #include "minmax.h"
 #include "utils.h"
 
-#include "../../libnbd/copy/unzstd.h"
+#include "../../../libnbd/copy/unzstd.h"
 
 int unzstd_debug_flag;
-void *bufOut;
+
+#if 0
+// https://stackoverflow.com/questions/18298280/how-to-declare-a-variable-as-thread-local-portably
+# if __STDC_VERSION__ >= 201112 && !defined __STDC_NO_THREADS__
+#  define thread_local _Thread_local
+# elif defined _WIN32 && ( \
+       defined _MSC_VER || \
+       defined __ICL || \
+       defined __DMC__ || \
+       defined __BORLANDC__ )
+#  define thread_local __declspec(thread)
+/* note that ICC (linux) and Clang are covered by __GNUC__ */
+# elif defined __GNUC__ || \
+       defined __SUNPRO_C || \
+       defined __hpux || \
+       defined __xlC__
+#  define thread_local __thread
+# else
+#  error "Cannot define thread_local"
+# endif
+#endif
 
 static int unzstd_config(nbdkit_next_config *next, nbdkit_backend *nxdata,
                       const char *key, const char *value) {
@@ -89,15 +109,10 @@ static int64_t unzstd_get_size(nbdkit_next *next, void *handle) {
 static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
                       uint32_t count, uint64_t offs, uint32_t flags, int *err) {
 
+  static __thread void *bufOut;
+
   struct zstd_params zstd_params;
-
-#if 0
-  char *s = buffer_to_str_wrap(buf, count, 0);
-  nbdkit_debug("%s", s);
-#endif
-
   memcpy(&zstd_params, buf, sizeof zstd_params);
-  nbdkit_debug("pwrite zstd_params.original_size=%lu zstd_params.original_offset=%lu", zstd_params.original_size, zstd_params.original_offset);
 
   void *ptr = realloc(bufOut, zstd_params.original_size);
   if (ptr == NULL) {
@@ -108,7 +123,6 @@ static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
 
   size_t const ret = ZSTD_decompress(bufOut, zstd_params.original_size, buf + sizeof zstd_params, count - sizeof zstd_params);
   if (ZSTD_isError(ret)) {
-    fprintf(stderr, "ZSTD_decompress() error: %s\n", ZSTD_getErrorName(ret));
     nbdkit_error("%s", ZSTD_getErrorName(ret));
     return -1;
   }
