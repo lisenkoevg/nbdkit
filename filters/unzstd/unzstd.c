@@ -109,6 +109,7 @@ static int64_t unzstd_get_size(nbdkit_next *next, void *handle) {
 static int unzstd_pwrite(nbdkit_next *next, void *handle, const void *buf,
                       uint32_t count, uint64_t offs, uint32_t flags, int *err) {
 
+  // TODO: check __thread portability
   static __thread void *bufOut;
 
   struct zstd_params zstd_params;
